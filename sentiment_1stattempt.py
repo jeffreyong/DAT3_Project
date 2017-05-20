@@ -5,7 +5,6 @@ Spyder Editor
 This is a temporary script file.
 """
 
-import csv
 
 import pandas as pd
 import numpy as np
@@ -16,11 +15,12 @@ with open('positivedata.csv', 'rU') as f:
     file1 = filter(None, file1)
         
 pos_data_df = pd.DataFrame(file1)
-pos_data_df.columns = ["Reviews"]
+pos_data_df.columns = ["reviews"]
+pos_data_df.insert(0, "sentiment", 1)
+
 pos_data_df.shape
 pos_data_df.head()
 
-pos_data_df.insert(0, "Sentiment", 1)
 
 with open('negativedata.csv', 'rU') as g:
     file2 = [row for row in g]
@@ -28,24 +28,15 @@ with open('negativedata.csv', 'rU') as g:
     file2 = filter(None, file2)
 
 neg_data_df = pd.DataFrame(file2)
-neg_data_df.columns = ["Reviews"]
-neg_data_df.insert(0, "Sentiment", 0)
+neg_data_df.columns = ["reviews"]
+neg_data_df.insert(0, "sentiment", 0)
 
-train_pos_df = pos_data_df[:len(pos_data_df)*4/5]
-train_neg_df = neg_data_df[:len(neg_data_df)*4/5]
-
-train_df = train_pos_df.append(train_neg_df)
-
-test_pos_df = pos_data_df[len(pos_data_df)*4/5:]
-test_neg_df = neg_data_df[len(neg_data_df)*4/5:]
-
-test_df = test_pos_df.append(test_neg_df)
-
-test_df = test_df.drop("Sentiment", axis=1)
+## combine the positive and negative reviews into a single dataframe
+data = pos_data_df.append(neg_data_df)
 
 # Count the labels in train_df to verify there are only 0 and 1
-train_df.Sentiment.value_counts()
-np.mean([len(s.split(" ")) for s in train_df.Reviews])
+data.sentiment.value_counts()
+np.mean([len(s.split(" ")) for s in data.reviews])
  
 import re, nltk
 from sklearn.feature_extraction.text import CountVectorizer
@@ -69,11 +60,11 @@ vectorizer = CountVectorizer(
         tokenizer = tokenize,
         lowercase = True,
         stop_words = 'english',
-        max_features = 100)
+        max_features = 500)
 
 # learn and fit the model/vectorizer and transform corpus into feature vectors
 
-corpus_all_features = vectorizer.fit_transform(train_df.Reviews.tolist() + test_df.Reviews.tolist())
+corpus_all_features = vectorizer.fit_transform(data.reviews.tolist())
 
 # make corpus features a numpy array
 corpus_all_features = corpus_all_features.toarray()
@@ -82,21 +73,20 @@ corpus_all_features = corpus_all_features.toarray()
 features_corpus = vectorizer.get_feature_names()
 print features_corpus
 
-# check there are 100 features
+# check there are 500 features
 len(features_corpus)
 
 # find frequency of features in corpus_all_features
 fdist_features = np.sum(corpus_all_features, axis=0)
 for word, count in zip(features_corpus, fdist_features):
     print count, word
-"How to do this frequency distribution with nltk?"
 
 # Create the classifier
 from sklearn.cross_validation import train_test_split
 
 X_train, X_test, y_train, y_test  = train_test_split(
-        corpus_all_features[0:len(train_df)], 
-        train_df.Sentiment,
+        corpus_all_features, 
+        data.sentiment,
         train_size=0.85, 
         random_state=1234)
 
@@ -111,25 +101,13 @@ y_pred = log_mod.predict(X_test)
 from sklearn.metrics import classification_report
 print(classification_report(y_test, y_pred))
 
-# train data with all training data to use for sentiment analysis with original test set
-
-# train classifier, all test data
-log_mod = LogisticRegression()
-log_mod = log_mod.fit(X=corpus_all_features[0:len(train_df)], y=train_df.Sentiment)
-
-#  get predictions
-test_pred = log_mod.predict(corpus_all_features[len(train_df):])
-
-
 # print sample of predictions
-import random
-sample = random.sample(xrange(len(test_pred)), 15)
-for review, sentiment in zip(test_df.Reviews[15:30], test_pred[15:30]):
+for review, sentiment in zip(data.reviews[15:50], y_pred[15:50]):
     print sentiment, review
 
 ''' To try 
 use Random Forest
-use a different sparsity coefficient, > 100, < 100?
+use a different sparsity coefficient, > 500, < 500?
 use stopwords that include previously omitted words
 test if these make our model better'''
 
