@@ -12,8 +12,8 @@ import pandas as pd
 import numpy as np
 import nltk, re
 from nltk.corpus import stopwords
-from nltk.stem.porter import PorterStemmer
-
+from nltk.stem.porter import *
+from nltk.stem import wordnet
 
 with open('positivedata.csv', 'rU') as f:
     file1 = [row for row in f]
@@ -24,10 +24,13 @@ with open('negativedata.csv', 'rU') as g:
     file2 = [row for row in g]
     file2 = map(lambda s: s.strip(), file2)
     file2 = filter(None, file2)
-    
+  
+lemmer = wordnet.WordNetLemmatizer()
 def review_to_words(raw):
+    # Clean punctuation
+    cleantext = raw.replace('/', ' ').replace('-', ' ').replace('"', '')
     # Remove quotation marks
-    review_text = re.sub(r'^"|"$', '', raw)
+    review_text = re.sub(r'^"|"$', '', cleantext)
     # Remove non-letters
     letters = re.sub("[^a-zA-Z]", " ", review_text)
     # Lower case and split into individual words
@@ -36,8 +39,10 @@ def review_to_words(raw):
     stops = set(stopwords.words("english"))
     # Remove stop words
     relevant_words = [w for w in words if not w in stops]
+    # lemmatize words
+    lemmatized_words = [lemmer.lemmatize(w) for w in relevant_words]
     # Join words back into one string separated by space, return result
-    return( " ".join(relevant_words))
+    return( " ".join([p for p in lemmatized_words]))
     
 review_to_words(file1[0])
 review_to_words(file2[0])
@@ -45,7 +50,6 @@ review_to_words(file2[0])
 num_pos_reviews = len(file1)
 num_neg_reviews = len(file2)
 
-# Clean all positive reviews, status updates
 print "Cleaning the set of positive reviews....\n"
 # Initialize empty list to hold cleaned positive reviews
 clean_pos_reviews = []
@@ -54,7 +58,6 @@ for i in xrange(1, num_pos_reviews):
         print "Review %d of %d\n" % (i+1, num_pos_reviews)
     clean_pos_reviews.append(review_to_words(file1[i]))
 
-# Clean all negative reviews, status updates
 print "Cleaning the set of negative reviews....\n"
 # Initialize empty list to hold cleaned negative reviews
 clean_neg_reviews = []
@@ -79,12 +82,11 @@ neg_data_df.head()
 
 data = pos_data_df.append(neg_data_df)
 
-'''See what is in the data'''
+# See what is in the data
 data.groupby('sentiment').describe()
 
 data['length'] = data['reviews'].map(lambda text: len(text))
 print data.head(10)
-print data.tail(10)
 
 # Count the labels in train_df to verify there are only 0 and 1
 data.sentiment.value_counts()
@@ -92,7 +94,7 @@ np.mean([len(s.split(" ")) for s in data.reviews])
 
 data.length.plot(bins=50, kind='hist')
 data.length.describe()
-print list(data.reviews[data.length > 1780])
+print list(data.reviews[data.length > 1740])
 
 data.hist(column='length', by='sentiment', bins=10)
 
@@ -117,6 +119,7 @@ from sklearn.feature_extraction.text import CountVectorizer
 # Initialize CountVectorizer object
 vectorizer = CountVectorizer(analyzer = 'word',     \
                              tokenizer = tokenize,      \
+                             ngram_range = (1, 2), \
                              preprocessor = None,   \
                              stop_words = None,     \
                              max_features = 5000)
@@ -132,7 +135,6 @@ features_corpus = vectorizer.get_feature_names()
 print features_corpus
 len(features_corpus)
 
-
 # Sum the counts of each feature word
 dist = np.sum(corpus_all_features, axis=0)
 
@@ -147,99 +149,125 @@ from sklearn.cross_validation import train_test_split
 X_train, X_test, y_train, y_test  = train_test_split(
         corpus_all_features, 
         data.sentiment,
-        train_size=0.85,
-        random_state=1234)
+        test_size=0.2,
+        random_state=42)
+
+from sklearn.linear_model import LogisticRegression, SGDClassifier
+from sklearn.naive_bayes import GaussianNB, MultinomialNB, BernoulliNB
+from sklearn.svm import LinearSVC
+from sklearn.metrics import classification_report
 
 # Create the Log Regression classifier
-from sklearn.linear_model import LogisticRegression
 
-log_mod = LogisticRegression()
+log_mod = LogisticRegression(penalty='l2', C=1.0)
 log_mod = log_mod.fit(X_train, y_train)
 
 y_log_pred = log_mod.predict(X_test)
 
 # find classifier precision
-from sklearn.metrics import classification_report
 print(classification_report(y_test, y_log_pred))
-
-'''test_pred = log_mod.predict(corpus_all_features[len(test_df):])
-for review, sentiment in zip(test_df.reviews[915:928], test_pred[915:928]):
-    print sentiment, review'''
     
 # Create the GaussianNB, MultinomialNB, BernoulliNB classifiers
-from sklearn.naive_bayes import GaussianNB, MultinomialNB, BernoulliNB
 gnb = GaussianNB()
 gnb = gnb.fit(X_train, y_train)
 y_gnb_pred = gnb.predict(X_test)
 # find classifier precision
 print(classification_report(y_test, y_gnb_pred))
 
-mnb = MultinomialNB()
+mnb = MultinomialNB(alpha=0.5, fit_prior=True, class_prior=None)
 mnb = mnb.fit(X_train, y_train)
 y_mnb_pred = mnb.predict(X_test)
 # find classifier precision
 print(classification_report(y_test, y_mnb_pred))
 
-bnb = BernoulliNB()
+bnb = BernoulliNB(alpha=0.05, binarize=0.0, fit_prior=True, class_prior=None)
 bnb = bnb.fit(X_train, y_train)
 y_bnb_pred = bnb.predict(X_test)
 # find classifier precision
 print(classification_report(y_test, y_bnb_pred))
 
-from sklearn.linear_model import LogisticRegression,SGDClassifier
-from sklearn.svm import LinearSVC
-
-sgd = SGDClassifier()
+# Stochastic Descent Classifier
+sgd = SGDClassifier(loss='log', penalty='l2', alpha=0.0001, random_state=None, learning_rate='optimal')
 sgd = sgd.fit(X_train, y_train)
-
 y_sgd_pred = sgd.predict(X_test)
-
 # find classifier precision
-from sklearn.metrics import classification_report
 print(classification_report(y_test, y_sgd_pred))
 
-linear = LinearSVC()
+# Linear SVC classifier
+linear = LinearSVC(penalty='l2', dual=True, loss='squared_hinge')
 linear = linear.fit(X_train, y_train)
-
 y_linear_pred = linear.predict(X_test)
-
 # find classifier precision
-from sklearn.metrics import classification_report
 print(classification_report(y_test, y_linear_pred))
  
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 
+forest = RandomForestClassifier(n_estimators=45, max_depth = 77)
+forest = forest.fit(X_train, y_train)
+y_forest_pred = forest.predict(X_test)
+# find classifier precision
+print(classification_report(y_test, y_forest_pred))
 
-classifiers = {'Logistic': LogisticRegression(),
-               'GaussianNB':GaussianNB(),
-               'BernoulliNB': BernoulliNB(),
-               'MultinomialNB': MultinomialNB(alpha=0.01),
-               'Stochastic GD': SGDClassifier(),
-               'RandomForest': RandomForestClassifier(max_depth = 39)}
 
-from sklearn.metrics import roc_auc_score
-
-for name, clf in classifiers.items():
-    clf.fit(X_train,y_train)
-    y_pred = clf.predict(X_test)
-    score = roc_auc_score(y_test, y_pred)
-    print "%s had an accuracy score of %0.2f"% (name, score)
-
-classifier2 = {'Randomforest':RandomForestClassifier,
+classifier = {'Randomforest':RandomForestClassifier,
                'DecisionTree':DecisionTreeClassifier}
 
 x_train, x_test, y_train, y_test = train_test_split(
         corpus_all_features, 
         data.sentiment,
-        train_size=0.85,
-        random_state=1234)
+        train_size=0.80,
+        random_state=42)
 
-for name, model in classifier2.items():
-    for i in range(1,41):
+for name, model in classifier1.items():
+    for i in range(1,46):
         clf=model(max_depth = i)
         clf.fit(x_train, y_train)
         score = clf.score(x_test, y_test)
         print "%s (%s) had an accuracy score of %0.4f"% (name,i, score)
 
+# Fine-tune n_estimators, max_depth= None for RandomForest
+for i in range(10, 51):
+    forest = RandomForestClassifier(n_estimators= i)
+    forest.fit(x_train, y_train)
+    score = forest.score(x_test, y_test)
+    print "forest with %s estimators had an accuracy score of %0.4f"% (i, score)
+    
+# Fine-tune max_depth, n_estimators = 45 for RandomForest
+for m in range(50, 101):
+    forest = RandomForestClassifier(max_depth= m, n_estimators=45)
+    forest.fit(x_train, y_train)
+    score = forest.score(x_test, y_test)
+    print "forest of max_depth =%s had an accuracy score of %0.4f"% (m, score)
+    
+classifiers2 = {'Logistic': LogisticRegression(penalty='l2', C=1.0),
+               'GaussianNB':GaussianNB(),
+               'BernoulliNB': BernoulliNB(alpha=0.05, binarize=0.0, fit_prior=True, class_prior=None),
+               'MultinomialNB': MultinomialNB(alpha=0.5, fit_prior=True, class_prior=None),
+               'Stochastic GD': SGDClassifier(loss='log', penalty='l2', alpha=0.0001, random_state=None, learning_rate='optimal'),
+               'RandomForest1': RandomForestClassifier(n_estimators=44, max_depth = None),
+               'RandomForest2': RandomForestClassifier(max_depth = 80),
+               'RandomForest3': RandomForestClassifier(n_estimators=44, max_depth = 77)}
+
+from sklearn.metrics import roc_auc_score, roc_curve, auc
+
+for name, clf in classifiers2.items():
+    clf.fit(X_train,y_train)
+    y_pred = clf.predict(X_test)
+    score = roc_auc_score(y_test, y_pred)
+    print "%s had an accuracy score of %0.2f"% (name, score)
+    #Create ROC curve
+    pred_probas = clf.predict_proba(X_test)[:,1]
+
+    fpr,tpr,_ = roc_curve(y_test, pred_probas)
+    roc_auc = auc(fpr,tpr)
+    plt.plot(fpr,tpr,label='area = %.2f' %roc_auc)
+    plt.plot([0, 1], [0, 1], 'k--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.legend(loc='lower right')
+
+    plt.show()
+
+    
 
